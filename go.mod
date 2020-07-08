@@ -9,4 +9,4 @@ require (
 	gopkg.in/yaml.v2 v2.2.4 // indirect
 )
 
-replace github.com/gorilla/websocket v1.4.2 => github.com/mtkcv/websocket v1.4.3-0.20200704063855-5fdbe6fce0b1
+replace github.com/gorilla/websocket v1.4.2 => github.com/mtkcv/websocket v1.4.3-0.20200707023012-0ac59ce411f1

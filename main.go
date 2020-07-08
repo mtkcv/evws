@@ -14,15 +14,59 @@ type taskWrapper struct {
 	do func()
 }
 
+func messageTypeFormat(mt int) string {
+	switch mt {
+	case websocket.PingMessage:
+		return "ping"
+	case websocket.PongMessage:
+		return "pong"
+	case websocket.CloseMessage:
+		return "close"
+	case websocket.TextMessage:
+		return "text"
+	case websocket.BinaryMessage:
+		return "binary"
+	default:
+		return "unknown"
+	}
+}
+
 func runClient() {
 	conn, _, err := websocket.DefaultDialer.Dial("ws://127.0.0.1:12345", nil)
 	if err != nil {
 		logger.Fatalf("websocket connect error:%s", err.Error())
 	}
-	conn.WriteControl(websocket.PingMessage, []byte("ping"), time.Now().Add(time.Second))
-	conn.WriteMessage(websocket.TextMessage, []byte("hello"))
-	conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(4000, "close"),
-		time.Now().Add(time.Second))
+	err = conn.WriteControl(websocket.PingMessage, []byte("ping"), time.Now().Add(time.Millisecond*500))
+	if err != nil {
+		fmt.Println(err)
+	}
+	time.Sleep(time.Second)
+	err = conn.WriteMessage(websocket.TextMessage, []byte("hello"))
+	if err != nil {
+		fmt.Println(err)
+	}
+	time.Sleep(time.Second)
+	err = conn.WriteMessage(websocket.TextMessage, []byte("hello"))
+	if err != nil {
+		fmt.Println(err)
+	}
+	time.Sleep(time.Second)
+	err = conn.WriteMessage(websocket.TextMessage, []byte("hello"))
+	if err != nil {
+		fmt.Println(err)
+	}
+	time.Sleep(time.Second)
+	err = conn.WriteControl(websocket.PingMessage, []byte("ping"), time.Now().Add(time.Millisecond*500))
+	if err != nil {
+		fmt.Println(err)
+	}
+	time.Sleep(time.Second)
+	err = conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(4000, "close"),
+		time.Now().Add(time.Millisecond*500))
+	if err != nil {
+		fmt.Println(err)
+	}
+	time.Sleep(time.Second * 3)
 	conn.Close()
 }
 
@@ -44,40 +88,51 @@ func main() {
 	defer tp.Close()
 
 	conns := make(map[int]*websocket.Conn)
-	go poll.Wait(func(fd, ev int) {
-		conn := conns[fd]
-		if conn == nil {
-			logger.Errorf("fd %d not found websocket conn", fd)
-			poll.Delete(fd)
-			conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(4000, "read error"),
-				time.Now().Add(time.Second))
-			conn.Close()
-			return
-		}
-		if ev&PollIn != 0 {
-			messageType, data, err := conn.ReadFrame()
-			if err != nil {
-				logger.Errorf("fd %d(%s) read frame error, %s", fd, conn.RemoteAddr().String(), err.Error())
-				poll.Delete(fd)
-				conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(4000, "read error"),
-					time.Now().Add(time.Second))
-				conn.Close()
-				return
-			}
-			if messageType != websocket.TextMessage && messageType != websocket.BinaryMessage {
-				logger.Infof("fd %d(%s) sent %d frame", fd, conn.RemoteAddr().String(), messageType)
-				return
-			}
-			logger.Infof("fd %d(%s) sent %d %s", fd, conn.RemoteAddr().String(), messageType, string(data))
-		}
+	go func() {
+		for {
+			err := poll.Wait(func(fd, ev int) {
+				fmt.Printf("poll %d %d\n", fd, ev)
+				conn := conns[fd]
+				if conn == nil {
+					logger.Errorf("fd %d not found websocket conn", fd)
+					poll.Delete(fd)
+					conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(4000, "read error"),
+						time.Now().Add(time.Second))
+					conn.Close()
+					return
+				}
+				if ev&PollIn != 0 {
+					messageType, data, err := conn.ReadFrame()
+					if err != nil {
+						logger.Errorf("fd %d(%s) read frame error, %s", fd, conn.RemoteAddr().String(), err.Error())
+						poll.Delete(fd)
+						conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(4000, "read error"),
+							time.Now().Add(time.Second))
+						conn.Close()
+						return
+					}
+					if messageType != websocket.TextMessage && messageType != websocket.BinaryMessage {
+						logger.Infof("fd %d(%s) sent %s frame", fd, conn.RemoteAddr().String(),
+							messageTypeFormat(messageType))
+					} else {
+						logger.Infof("fd %d(%s) sent %s %s", fd, conn.RemoteAddr().String(),
+							messageTypeFormat(messageType), string(data))
+					}
+				}
 
-		if ev&PollHup != 0 || ev&PollErr != 0 {
-			poll.Delete(fd)
-			conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(4000, "read error"),
-				time.Now().Add(time.Second))
-			conn.Close()
+				if ev&PollHup != 0 || ev&PollErr != 0 {
+					poll.Delete(fd)
+					conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(4000, "read error"),
+						time.Now().Add(time.Second))
+					conn.Close()
+				}
+			})
+
+			if err != nil {
+				logger.Fatalf("poll wait error:%s", err.Error())
+			}
 		}
-	})
+	}()
 
 	http.HandleFunc("/", func(resp http.ResponseWriter, req *http.Request) {
 		upg := websocket.Upgrader{
@@ -87,7 +142,6 @@ func main() {
 		if err != nil {
 			fmt.Println(err)
 		}
-
 		fd := websocketFD(conn)
 		err = poll.Add(websocketFD(conn))
 		if err != nil {

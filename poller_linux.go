@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"syscall"
 )
 
@@ -56,6 +57,7 @@ func (ep *Poller) Wait(callback func(fd, ev int)) error {
 	events := make([]syscall.EpollEvent, 128)
 	n, err := syscall.EpollWait(ep.fd, events, 128)
 	if err != nil {
+		fmt.Println(err)
 		return err
 	}
 	for i := 0; i < n; i++ {
